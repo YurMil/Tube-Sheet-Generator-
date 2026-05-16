@@ -1,6 +1,6 @@
 export type Point = {x: number; y: number};
 
-export type LayoutType = 'triangular' | 'square';
+export type LayoutType = 'triangular30' | 'triangular' | 'square45' | 'square';
 export type PartitionOrientation = 'horizontal' | 'vertical';
 
 export type GeneratorParams = {
@@ -16,8 +16,10 @@ export type GeneratorParams = {
 };
 
 export type HoleState = 'normal' | 'removed' | 'spacer';
+export type HoleShape = 'circle' | 'square';
 
 export type ModifiedHole = {
   hidden?: boolean;
   diameter?: number;
+  shape?: HoleShape;
 };

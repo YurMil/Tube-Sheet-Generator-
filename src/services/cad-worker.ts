@@ -86,7 +86,9 @@ const createTubeSheetSolid = async (
   const replicadModule = await loadReplicad();
   const replicadAny = replicadModule as any;
   const draw = replicadAny.draw || replicadAny.default?.draw;
+  const drawRectangle = replicadAny.drawRectangle || replicadAny.default?.drawRectangle;
   const makeCylinder = replicadAny.makeCylinder || replicadAny.default?.makeCylinder;
+  const makeBox = replicadAny.makeBox || replicadAny.default?.makeBox;
   const makeCompound = replicadAny.makeCompound || replicadAny.default?.makeCompound;
 
   const boardRadius = params.boardDiameter / 2;
@@ -108,14 +110,33 @@ const createTubeSheetSolid = async (
       let sketch = draw().circle(boardRadius);
       
       if (sketch && typeof sketch.cut === 'function') {
-        const standardHoles = activeCoords
-          .filter((coord) => modifiedHoles.get(createPointKey(coord))?.diameter === undefined)
+        const hasSquareHoles = activeCoords.some(
+          (coord) => modifiedHoles.get(createPointKey(coord))?.shape === 'square',
+        );
+        if (hasSquareHoles && typeof drawRectangle !== 'function') {
+          throw new Error('Replicad drawRectangle() export not found.');
+        }
+
+        const standardCircleHoles = activeCoords
+          .filter((coord) => {
+            const modified = modifiedHoles.get(createPointKey(coord));
+            return modified?.diameter === undefined && modified?.shape !== 'square';
+          })
           .map((coord) => draw().circle(holeRadius).translate(coord.x, coord.y));
-        const customHoles = activeCoords
-          .filter((coord) => modifiedHoles.get(createPointKey(coord))?.diameter !== undefined)
+        const customCircleHoles = activeCoords
+          .filter((coord) => {
+            const modified = modifiedHoles.get(createPointKey(coord));
+            return modified?.diameter !== undefined && modified?.shape !== 'square';
+          })
           .map((coord) => {
             const diameter = modifiedHoles.get(createPointKey(coord))?.diameter ?? params.tubeDiameter;
             return draw().circle(diameter / 2).translate(coord.x, coord.y);
+          });
+        const squareHoles = activeCoords
+          .filter((coord) => modifiedHoles.get(createPointKey(coord))?.shape === 'square')
+          .map((coord) => {
+            const diameter = modifiedHoles.get(createPointKey(coord))?.diameter ?? params.tubeDiameter;
+            return drawRectangle(diameter, diameter).translate(coord.x, coord.y);
           });
 
         // ????????? ?? ??????? ?????? ??? 2D (?? 1000 ????)
@@ -148,8 +169,9 @@ const createTubeSheetSolid = async (
           }
         };
 
-        processBatches(standardHoles);
-        processBatches(customHoles);
+        processBatches(standardCircleHoles);
+        processBatches(customCircleHoles);
+        processBatches(squareHoles);
 
         const result = sketch.sketchOnPlane().extrude(thickness);
         console.timeEnd('[CAD-Worker] Geometry Gen');
@@ -166,15 +188,26 @@ const createTubeSheetSolid = async (
   if (typeof makeCylinder !== 'function') {
     throw new Error('Replicad makeCylinder() export not found.');
   }
+  if (
+    activeCoords.some((coord) => modifiedHoles.get(createPointKey(coord))?.shape === 'square') &&
+    typeof makeBox !== 'function'
+  ) {
+    throw new Error('Replicad makeBox() export not found.');
+  }
 
   console.log(`[CAD-Worker] Fallback to 3D Method for ${total} holes...`);
   let mainBody = makeCylinder(boardRadius, thickness);
   
-  const standardCoords = activeCoords.filter(
-    (coord) => modifiedHoles.get(createPointKey(coord))?.diameter === undefined,
-  );
-  const customCoords = activeCoords.filter(
-    (coord) => modifiedHoles.get(createPointKey(coord))?.diameter !== undefined,
+  const standardCoords = activeCoords.filter((coord) => {
+    const modified = modifiedHoles.get(createPointKey(coord));
+    return modified?.diameter === undefined && modified?.shape !== 'square';
+  });
+  const customCoords = activeCoords.filter((coord) => {
+    const modified = modifiedHoles.get(createPointKey(coord));
+    return modified?.diameter !== undefined && modified?.shape !== 'square';
+  });
+  const squareCoords = activeCoords.filter(
+    (coord) => modifiedHoles.get(createPointKey(coord))?.shape === 'square',
   );
 
   const standardHoles = standardCoords.map((coord) =>
@@ -183,6 +216,11 @@ const createTubeSheetSolid = async (
   const customHoles = customCoords.map((coord) => {
     const diameter = modifiedHoles.get(createPointKey(coord))?.diameter ?? params.tubeDiameter;
     return makeCylinder(diameter / 2, thickness).translate(coord.x, coord.y, 0);
+  });
+  const squareHoles = squareCoords.map((coord) => {
+    const diameter = modifiedHoles.get(createPointKey(coord))?.diameter ?? params.tubeDiameter;
+    const half = diameter / 2;
+    return makeBox([coord.x - half, coord.y - half, 0], [coord.x + half, coord.y + half, thickness]);
   });
 
   const BATCH_SIZE_3D = 200; 
@@ -228,6 +266,7 @@ const createTubeSheetSolid = async (
 
   processBatches(standardHoles);
   processBatches(customHoles);
+  processBatches(squareHoles);
 
   console.timeEnd('[CAD-Worker] Geometry Gen');
   return mainBody;

@@ -3,6 +3,24 @@ import {createPointKey} from '../core/geometry-utils';
 
 type DxfLine = {x1: number; y1: number; x2: number; y2: number};
 
+const buildDxfLine = (layer: string, line: DxfLine) =>
+  `0\nLINE\n8\n${layer}\n10\n${line.x1.toFixed(4)}\n20\n${line.y1.toFixed(4)}\n30\n0.0\n11\n${line.x2.toFixed(4)}\n21\n${line.y2.toFixed(4)}\n31\n0.0\n`;
+
+const buildSquareHole = (coord: Point, size: number) => {
+  const half = size / 2;
+  const left = coord.x - half;
+  const right = coord.x + half;
+  const bottom = coord.y - half;
+  const top = coord.y + half;
+  const lines: DxfLine[] = [
+    {x1: left, y1: bottom, x2: right, y2: bottom},
+    {x1: right, y1: bottom, x2: right, y2: top},
+    {x1: right, y1: top, x2: left, y2: top},
+    {x1: left, y1: top, x2: left, y2: bottom},
+  ];
+  return lines.map((line) => buildDxfLine('HOLES', line)).join('');
+};
+
 const buildPartitionLines = (params: GeneratorParams): DxfLine[] => {
   if (params.passCount <= 1) {
     return [];
@@ -122,12 +140,17 @@ export const buildTubeSheetDxf = (
     if (modified?.hidden) {
       return;
     }
-    const radius = (modified?.diameter ?? params.tubeDiameter) / 2;
-    dxf += `0\nCIRCLE\n8\nHOLES\n10\n${coord.x.toFixed(4)}\n20\n${coord.y.toFixed(4)}\n30\n0.0\n40\n${radius}\n`;
+    const diameter = modified?.diameter ?? params.tubeDiameter;
+    if (modified?.shape === 'square') {
+      dxf += buildSquareHole(coord, diameter);
+      return;
+    }
+
+    dxf += `0\nCIRCLE\n8\nHOLES\n10\n${coord.x.toFixed(4)}\n20\n${coord.y.toFixed(4)}\n30\n0.0\n40\n${diameter / 2}\n`;
   });
 
   partitions.forEach((line) => {
-    dxf += `0\nLINE\n8\nPARTITIONS\n10\n${line.x1.toFixed(4)}\n20\n${line.y1.toFixed(4)}\n30\n0.0\n11\n${line.x2.toFixed(4)}\n21\n${line.y2.toFixed(4)}\n31\n0.0\n`;
+    dxf += buildDxfLine('PARTITIONS', line);
   });
 
   dxf += `0\nENDSEC\n0\nEOF\n`;

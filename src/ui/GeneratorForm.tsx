@@ -24,7 +24,9 @@ type SectionConfig = {
 };
 
 const layoutOptions: SelectOption<LayoutType>[] = [
+  {value: 'triangular30', label: 'Triangular (30 deg)'},
   {value: 'triangular', label: 'Triangular (60 deg)'},
+  {value: 'square45', label: 'Square (45 deg)'},
   {value: 'square', label: 'Square (90 deg)'},
 ];
 
