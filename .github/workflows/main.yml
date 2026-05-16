@@ -71,7 +71,7 @@ jobs:
       - name: Deploy to cadautoscript.com
         env:
           DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
-          HOST_REPOSITORY: biosxxx/cadautoscript.com
+          HOST_REPOSITORY: YurMil/cadautoscript.com
           TARGET_DIRECTORY: static/utility-apps/tube-sheet-generator
         run: |
           if [ -z "$DEPLOY_TOKEN" ]; then
@@ -80,7 +80,7 @@ jobs:
           fi
 
           git config --global user.name "tube-sheet-generator-bot"
-          git config --global user.email "bot@biosxxx.com"
+          git config --global user.email "bot@yurmil.com"
 
           git clone --depth 1 "https://x-access-token:${DEPLOY_TOKEN}@github.com/${HOST_REPOSITORY}.git" site
           rm -rf "site/${TARGET_DIRECTORY}"

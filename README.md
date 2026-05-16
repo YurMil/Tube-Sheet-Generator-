@@ -31,7 +31,7 @@ The production bundle is emitted to `dist/` with:
 
 ## Deployment
 
-The GitHub Actions workflow builds this app, uploads a static artifact, and deploys `dist/` into `biosxxx/cadautoscript.com`.
+The GitHub Actions workflow builds this app, uploads a static artifact, and deploys `dist/` into `YurMil/cadautoscript.com`.
 
 Required repository secret:
 
