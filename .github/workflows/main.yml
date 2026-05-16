@@ -75,9 +75,12 @@ jobs:
           TARGET_DIRECTORY: static/utility-apps/tube-sheet-generator
         run: |
           if [ -z "$DEPLOY_TOKEN" ]; then
-            echo "DEPLOY_TOKEN is not configured; skipping host deployment."
-            exit 0
+            echo "DEPLOY_TOKEN is not configured; cannot deploy to ${HOST_REPOSITORY}."
+            exit 1
           fi
+
+          echo "Downloaded artifact contents:"
+          find . -maxdepth 3 -type f | sort
 
           git config --global user.name "tube-sheet-generator-bot"
           git config --global user.email "bot@yurmil.com"
