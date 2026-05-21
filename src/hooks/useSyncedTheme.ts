@@ -1,4 +1,4 @@
-import {useEffect, useState} from 'react';
+import {useLayoutEffect, useState} from 'react';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -49,7 +49,7 @@ export default function useSyncedTheme() {
     return readHostTheme() ?? readSystemTheme();
   });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.documentElement;
     const applyTheme = (nextTheme: ThemeMode) => {
       if (root.getAttribute('data-theme') !== nextTheme) {
