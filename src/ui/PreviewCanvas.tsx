@@ -1,4 +1,5 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import RBush from 'rbush';
 import type {ThemeMode} from '../hooks/useSyncedTheme';
 import type {GeneratorParams, ModifiedHole, Point} from '../types';
 import {createPointKey} from '../core/geometry-utils';
@@ -21,6 +22,23 @@ type DragState = {
   panX: number;
   panY: number;
   moved: boolean;
+  mode: 'pan' | 'select';
+};
+
+type SelectionBox = {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+};
+
+type SpatialItem = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  point: Point;
+  key: string;
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -46,6 +64,7 @@ export type PreviewCanvasProps = {
   themeMode: ThemeMode;
   onHoleClick: (point: Point, event: React.MouseEvent<HTMLCanvasElement, MouseEvent>) => void;
   onCanvasClick: () => void;
+  onBoxSelect: (keys: Set<string>, additive: boolean) => void;
   className?: string;
   style?: React.CSSProperties;
 };
@@ -58,6 +77,7 @@ export default function PreviewCanvas({
   themeMode,
   onHoleClick,
   onCanvasClick,
+  onBoxSelect,
   className,
   style,
 }: PreviewCanvasProps) {
@@ -68,6 +88,27 @@ export default function PreviewCanvas({
   const pendingViewportRef = useRef<Viewport | null>(null);
   const [viewport, setViewport] = useState<Viewport>({zoom: 1, panX: 0, panY: 0});
   const [visibleCount, setVisibleCount] = useState(points.length);
+  const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
+
+  const spatialIndex = useMemo(() => {
+    const tree = new RBush<SpatialItem>();
+    tree.load(
+      points.map((point) => {
+        const key = createPointKey(point);
+        const modified = modifiedHoles.get(key);
+        const radius = (modified?.diameter ?? params.tubeDiameter) / 2;
+        return {
+          minX: point.x - radius,
+          minY: point.y - radius,
+          maxX: point.x + radius,
+          maxY: point.y + radius,
+          point,
+          key,
+        };
+      }),
+    );
+    return tree;
+  }, [modifiedHoles, params.tubeDiameter, points]);
 
   const scheduleViewport = useCallback((nextViewport: Viewport) => {
     pendingViewportRef.current = nextViewport;
@@ -159,8 +200,17 @@ export default function PreviewCanvas({
       const worldPoint = getWorldPoint(clientX, clientY);
       if (!worldPoint) return null;
 
-      for (const point of points) {
-        const modified = modifiedHoles.get(createPointKey(point));
+      const candidates = spatialIndex.search({
+        minX: worldPoint.x,
+        minY: worldPoint.y,
+        maxX: worldPoint.x,
+        maxY: worldPoint.y,
+      });
+      let closest: {point: Point; distanceSq: number} | null = null;
+
+      for (const candidate of candidates) {
+        const point = candidate.point;
+        const modified = modifiedHoles.get(candidate.key);
         const diameter = modified?.diameter ?? params.tubeDiameter;
         const radius = diameter / 2;
         const dx = point.x - worldPoint.x;
@@ -170,12 +220,38 @@ export default function PreviewCanvas({
           ? Math.abs(dx) <= radius && Math.abs(dy) <= radius
           : Math.sqrt(dx * dx + dy * dy) <= radius;
         if (isHit) {
-          return point;
+          const distanceSq = dx * dx + dy * dy;
+          if (!closest || distanceSq < closest.distanceSq) {
+            closest = {point, distanceSq};
+          }
         }
       }
-      return null;
+      return closest?.point ?? null;
     },
-    [getWorldPoint, points, params.tubeDiameter, modifiedHoles],
+    [getWorldPoint, modifiedHoles, params.tubeDiameter, spatialIndex],
+  );
+
+  const selectBox = useCallback(
+    (box: SelectionBox, additive: boolean) => {
+      const start = getWorldPoint(box.startX, box.startY);
+      const end = getWorldPoint(box.endX, box.endY);
+      if (!start || !end) return;
+
+      const minX = Math.min(start.x, end.x);
+      const maxX = Math.max(start.x, end.x);
+      const minY = Math.min(start.y, end.y);
+      const maxY = Math.max(start.y, end.y);
+      const keys = new Set<string>();
+
+      spatialIndex.search({minX, minY, maxX, maxY}).forEach((item) => {
+        if (item.point.x >= minX && item.point.x <= maxX && item.point.y >= minY && item.point.y <= maxY) {
+          keys.add(item.key);
+        }
+      });
+
+      onBoxSelect(keys, additive);
+    },
+    [getWorldPoint, onBoxSelect, spatialIndex],
   );
 
   const handleClick = useCallback(
@@ -206,9 +282,10 @@ export default function PreviewCanvas({
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLCanvasElement>) => {
-      if (event.button !== 0) return;
+      if (event.button !== 0 && event.button !== 1) return;
       const canvas = canvasRef.current;
       if (!canvas) return;
+      const mode = event.button === 1 || event.altKey ? 'pan' : 'select';
       dragRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
@@ -216,7 +293,16 @@ export default function PreviewCanvas({
         panX: viewport.panX,
         panY: viewport.panY,
         moved: false,
+        mode,
       };
+      if (mode === 'select') {
+        setSelectionBox({
+          startX: event.clientX,
+          startY: event.clientY,
+          endX: event.clientX,
+          endY: event.clientY,
+        });
+      }
       canvas.setPointerCapture(event.pointerId);
     },
     [viewport.panX, viewport.panY],
@@ -234,12 +320,22 @@ export default function PreviewCanvas({
         const moved = Math.abs(dx) > DRAG_THRESHOLD_PX || Math.abs(dy) > DRAG_THRESHOLD_PX;
         if (moved || drag.moved) {
           drag.moved = true;
-          scheduleViewport({
-            zoom: viewport.zoom,
-            panX: drag.panX + dx,
-            panY: drag.panY + dy,
-          });
-          canvas.style.cursor = 'grabbing';
+          if (drag.mode === 'pan') {
+            scheduleViewport({
+              zoom: viewport.zoom,
+              panX: drag.panX + dx,
+              panY: drag.panY + dy,
+            });
+            canvas.style.cursor = 'grabbing';
+          } else {
+            setSelectionBox({
+              startX: drag.startX,
+              startY: drag.startY,
+              endX: event.clientX,
+              endY: event.clientY,
+            });
+            canvas.style.cursor = 'crosshair';
+          }
           return;
         }
       }
@@ -250,19 +346,34 @@ export default function PreviewCanvas({
     [getHitPoint, scheduleViewport, viewport.zoom],
   );
 
-  const handlePointerUp = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    const drag = dragRef.current;
-    if (!canvas || drag?.pointerId !== event.pointerId) return;
-    if (drag.moved) {
-      suppressClickRef.current = true;
-    }
-    dragRef.current = null;
-    if (canvas.hasPointerCapture(event.pointerId)) {
-      canvas.releasePointerCapture(event.pointerId);
-    }
-    canvas.style.cursor = 'grab';
-  }, []);
+  const handlePointerUp = useCallback(
+    (event: React.PointerEvent<HTMLCanvasElement>) => {
+      const canvas = canvasRef.current;
+      const drag = dragRef.current;
+      if (!canvas || drag?.pointerId !== event.pointerId) return;
+      if (drag.moved) {
+        suppressClickRef.current = true;
+        if (drag.mode === 'select') {
+          selectBox(
+            {
+              startX: drag.startX,
+              startY: drag.startY,
+              endX: event.clientX,
+              endY: event.clientY,
+            },
+            event.ctrlKey || event.metaKey,
+          );
+        }
+      }
+      dragRef.current = null;
+      setSelectionBox(null);
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+      canvas.style.cursor = 'grab';
+    },
+    [selectBox],
+  );
 
   const handleLeave = useCallback(() => {
     const canvas = canvasRef.current;
@@ -289,10 +400,12 @@ export default function PreviewCanvas({
     const boardStroke = readCanvasColor(themeStyles, '--preview-board-stroke', '#334155');
     const holeFill = readCanvasColor(themeStyles, '--preview-hole-fill', '#0ea5e9');
     const spacerFill = readCanvasColor(themeStyles, '--preview-spacer-fill', '#f97316');
+    const tieRodFill = readCanvasColor(themeStyles, '--preview-tie-rod-fill', '#8b5cf6');
     const hiddenFill = readCanvasColor(themeStyles, '--preview-hidden-fill', 'rgba(15, 23, 42, 0.15)');
     const hiddenStroke = readCanvasColor(themeStyles, '--preview-hidden-stroke', '#94a3b8');
     const partitionStroke = readCanvasColor(themeStyles, '--preview-partition-stroke', '#ef4444');
     const selectedStroke = readCanvasColor(themeStyles, '--preview-selected-stroke', '#facc15');
+    const otlStroke = readCanvasColor(themeStyles, '--preview-otl-stroke', '#10b981');
 
     const scale = (Math.min(rect.width, rect.height) / (params.boardDiameter * 1.1)) * viewport.zoom;
     const centerX = rect.width / 2;
@@ -304,6 +417,12 @@ export default function PreviewCanvas({
     const visibleMaxY = -(0 - originY) / scale;
     const visibleMinY = -(rect.height - originY) / scale;
     const cullPadding = Math.max(params.tubePitch ?? params.tubeDiameter, params.tubeDiameter);
+    let outerTubeLimitRadius = 0;
+    points.forEach((coord) => {
+      if (!modifiedHoles.get(createPointKey(coord))?.hidden) {
+        outerTubeLimitRadius = Math.max(outerTubeLimitRadius, Math.sqrt(coord.x * coord.x + coord.y * coord.y));
+      }
+    });
     let nextVisibleCount = 0;
 
     ctx.save();
@@ -332,6 +451,7 @@ export default function PreviewCanvas({
       const isHidden = modified?.hidden === true;
       const isSpacer = modified?.diameter !== undefined;
       const isSquare = modified?.shape === 'square';
+      const isTieRod = modified?.type === 'tieRod';
       const isSelected = selectedHoleKeys.has(createPointKey(coord));
       const radius = (modified?.diameter ?? params.tubeDiameter) / 2;
       const drawX = coord.x * scale;
@@ -348,7 +468,7 @@ export default function PreviewCanvas({
       };
 
       const radiusPx = radius * scale;
-      const canDrawFastDot = radiusPx < 1.4 && !isHidden && !isSpacer && !isSquare && !isSelected;
+      const canDrawFastDot = radiusPx < 1.4 && !isHidden && !isSpacer && !isSquare && !isSelected && !isTieRod;
 
       if (canDrawFastDot) {
         ctx.fillStyle = holeFill;
@@ -371,6 +491,9 @@ export default function PreviewCanvas({
         ctx.moveTo(drawX - crossSize, drawY + crossSize);
         ctx.lineTo(drawX + crossSize, drawY - crossSize);
         ctx.stroke();
+      } else if (isTieRod) {
+        ctx.fillStyle = tieRodFill;
+        ctx.fill();
       } else if (isSpacer) {
         ctx.fillStyle = spacerFill;
         ctx.fill();
@@ -386,6 +509,16 @@ export default function PreviewCanvas({
         ctx.stroke();
       }
     });
+
+    if (outerTubeLimitRadius > 0) {
+      ctx.beginPath();
+      ctx.arc(0, 0, outerTubeLimitRadius * scale, 0, 2 * Math.PI);
+      ctx.strokeStyle = otlStroke;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 5]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
     if (params.passCount > 1) {
       const boardRadius = params.boardDiameter / 2;
@@ -434,8 +567,22 @@ export default function PreviewCanvas({
 
     ctx.restore();
 
+    if (selectionBox) {
+      const left = Math.min(selectionBox.startX, selectionBox.endX) - rect.left;
+      const top = Math.min(selectionBox.startY, selectionBox.endY) - rect.top;
+      const width = Math.abs(selectionBox.endX - selectionBox.startX);
+      const height = Math.abs(selectionBox.endY - selectionBox.startY);
+      ctx.fillStyle = 'rgba(29, 127, 215, 0.12)';
+      ctx.strokeStyle = readCanvasColor(themeStyles, '--field-focus', '#1d7fd7');
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 4]);
+      ctx.fillRect(left, top, width, height);
+      ctx.strokeRect(left, top, width, height);
+      ctx.setLineDash([]);
+    }
+
     setVisibleCount((current) => (current === nextVisibleCount ? current : nextVisibleCount));
-  }, [modifiedHoles, params, points, selectedHoleKeys, themeMode, viewport]);
+  }, [modifiedHoles, params, points, selectedHoleKeys, selectionBox, themeMode, viewport]);
 
   useEffect(() => {
     return () => {
@@ -459,6 +606,7 @@ export default function PreviewCanvas({
         onMouseLeave={handleLeave}
         onWheel={handleWheel}
         onDoubleClick={resetViewport}
+        onContextMenu={(event) => event.preventDefault()}
       />
       <div className="preview-zoom-controls" aria-label="Preview zoom controls">
         <button

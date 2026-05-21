@@ -22,6 +22,14 @@ export const getSafeRadius = (params: GeneratorParams) =>
 export const isWithinRadius = (point: Point, radius: number) =>
   Math.sqrt(point.x * point.x + point.y * point.y) <= radius;
 
+export const isWithinCutoffZone = (point: Point, params: GeneratorParams) => {
+  const boardRadius = params.boardDiameter / 2;
+  if (params.topCutoffChord > 0 && point.y >= boardRadius - params.topCutoffChord) {
+    return true;
+  }
+  return params.bottomCutoffChord > 0 && point.y <= -boardRadius + params.bottomCutoffChord;
+};
+
 export const createPointCollector = (safeRadius: number) => {
   const points: Point[] = [];
   const set = new Set<string>();

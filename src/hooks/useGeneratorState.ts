@@ -2,6 +2,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import type React from 'react';
 import {DEFAULT_PARAMS} from '../constants';
 import {getLayoutStrategy} from '../core/layout-strategies';
+import {isWithinCutoffZone} from '../core/geometry-utils';
 import type {GeneratorParams, ModifiedHole, Point} from '../types';
 import {generateStepInWorker, warmupCadWorker} from '../services/cad-worker-client';
 import type {CadWorkerProgressMessage} from '../services/cad-worker-protocol';
@@ -35,7 +36,10 @@ export default function useGeneratorState(): UseGeneratorStateResult {
   const warmupStarted = useRef(false);
 
   const tubeCoords = useMemo<Point[]>(
-    () => getLayoutStrategy(params.tubeLayout).calculatePoints(params),
+    () =>
+      getLayoutStrategy(params.tubeLayout)
+        .calculatePoints(params)
+        .filter((point) => !isWithinCutoffZone(point, params)),
     [params],
   );
 

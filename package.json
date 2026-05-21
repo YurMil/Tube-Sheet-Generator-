@@ -10,12 +10,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "rbush": "^4.0.1",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "replicad": "^0.20.5",
     "replicad-opencascadejs": "^0.20.2"
   },
   "devDependencies": {
+    "@types/rbush": "^4.0.0",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",

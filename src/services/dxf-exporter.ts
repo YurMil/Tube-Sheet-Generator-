@@ -6,7 +6,7 @@ type DxfLine = {x1: number; y1: number; x2: number; y2: number};
 const buildDxfLine = (layer: string, line: DxfLine) =>
   `0\nLINE\n8\n${layer}\n10\n${line.x1.toFixed(4)}\n20\n${line.y1.toFixed(4)}\n30\n0.0\n11\n${line.x2.toFixed(4)}\n21\n${line.y2.toFixed(4)}\n31\n0.0\n`;
 
-const buildSquareHole = (coord: Point, size: number) => {
+const buildSquareHole = (layer: string, coord: Point, size: number) => {
   const half = size / 2;
   const left = coord.x - half;
   const right = coord.x + half;
@@ -18,7 +18,7 @@ const buildSquareHole = (coord: Point, size: number) => {
     {x1: right, y1: top, x2: left, y2: top},
     {x1: left, y1: top, x2: left, y2: bottom},
   ];
-  return lines.map((line) => buildDxfLine('HOLES', line)).join('');
+  return lines.map((line) => buildDxfLine(layer, line)).join('');
 };
 
 const buildPartitionLines = (params: GeneratorParams): DxfLine[] => {
@@ -85,7 +85,7 @@ const buildLayerTable = () => {
     '2',
     'LAYER',
     '70',
-    '3',
+    '4',
     '0',
     'LAYER',
     '2',
@@ -117,6 +117,16 @@ const buildLayerTable = () => {
     '6',
     'CONTINUOUS',
     '0',
+    'LAYER',
+    '2',
+    'TIE_RODS',
+    '70',
+    '0',
+    '62',
+    '3',
+    '6',
+    'CONTINUOUS',
+    '0',
     'ENDTAB',
     '0',
     'ENDSEC',
@@ -141,12 +151,13 @@ export const buildTubeSheetDxf = (
       return;
     }
     const diameter = modified?.diameter ?? params.tubeDiameter;
+    const layer = modified?.type === 'tieRod' ? 'TIE_RODS' : 'HOLES';
     if (modified?.shape === 'square') {
-      dxf += buildSquareHole(coord, diameter);
+      dxf += buildSquareHole(layer, coord, diameter);
       return;
     }
 
-    dxf += `0\nCIRCLE\n8\nHOLES\n10\n${coord.x.toFixed(4)}\n20\n${coord.y.toFixed(4)}\n30\n0.0\n40\n${diameter / 2}\n`;
+    dxf += `0\nCIRCLE\n8\n${layer}\n10\n${coord.x.toFixed(4)}\n20\n${coord.y.toFixed(4)}\n30\n0.0\n40\n${diameter / 2}\n`;
   });
 
   partitions.forEach((line) => {

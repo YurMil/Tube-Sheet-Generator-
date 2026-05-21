@@ -47,9 +47,17 @@ const formSections: SectionConfig[] = [
     title: 'Tubes',
     fields: [
       {kind: 'number', name: 'tubeDiameter', label: 'Diameter (mm)', min: 1},
+      {kind: 'number', name: 'tubeLength', label: 'Tube length L (mm)', min: 0},
       {kind: 'select', name: 'tubeLayout', label: 'Layout', options: layoutOptions},
       {kind: 'number', name: 'tubePitch', label: 'Pitch (mm)', min: 1},
       {kind: 'number', name: 'edgeMargin', label: 'Edge margin (mm)', min: 0},
+    ],
+  },
+  {
+    title: 'Impingement cut-off',
+    fields: [
+      {kind: 'number', name: 'topCutoffChord', label: 'Top cut-off chord (mm)', min: 0},
+      {kind: 'number', name: 'bottomCutoffChord', label: 'Bottom cut-off chord (mm)', min: 0},
     ],
   },
   {
