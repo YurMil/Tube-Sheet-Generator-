@@ -130,6 +130,7 @@ select {
   min-width: 0;
 }
 
+.controls-panel,
 .preview-panel,
 .properties-panel {
   align-self: start;
@@ -137,6 +138,18 @@ select {
   top: 18px;
   height: calc(100vh - 36px);
   max-height: calc(100vh - 36px);
+}
+
+.controls-panel {
+  direction: rtl;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-left: 8px;
+  scrollbar-gutter: stable;
+}
+
+.controls-panel > * {
+  direction: ltr;
 }
 
 .properties-panel {
@@ -324,27 +337,27 @@ select {
 
 .preview-zoom-controls {
   position: absolute;
-  right: 14px;
-  bottom: 14px;
+  right: 10px;
+  bottom: 10px;
   z-index: 10;
   display: grid;
-  grid-template-columns: 34px minmax(110px, 180px) 34px auto;
+  grid-template-columns: 28px minmax(78px, 120px) 28px 38px;
   align-items: center;
-  gap: 8px;
-  max-width: calc(100% - 28px);
+  gap: 5px;
+  max-width: calc(100% - 20px);
   border: 1px solid var(--zoom-border);
-  border-radius: 8px;
-  padding: 8px;
+  border-radius: 6px;
+  padding: 6px;
   background: var(--zoom-surface);
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
   backdrop-filter: blur(10px);
 }
 
 .preview-zoom-button,
 .preview-fit-button {
-  min-height: 34px;
+  min-height: 28px;
   border: 1px solid var(--button-secondary-border);
-  border-radius: 6px;
+  border-radius: 5px;
   color: var(--button-secondary-text);
   background: var(--button-secondary-bg);
   cursor: pointer;
@@ -352,14 +365,15 @@ select {
 }
 
 .preview-zoom-button {
-  width: 34px;
+  width: 28px;
   padding: 0;
-  font-size: 1.15rem;
+  font-size: 1rem;
   line-height: 1;
 }
 
 .preview-fit-button {
-  padding: 0 12px;
+  padding: 0 8px;
+  font-size: 0.78rem;
 }
 
 .preview-zoom-button:hover,
@@ -369,19 +383,18 @@ select {
 
 .preview-zoom-slider {
   width: 100%;
-  min-width: 110px;
+  min-width: 78px;
   accent-color: var(--input-accent);
 }
 
 .preview-zoom-readout {
-  display: grid;
+  display: flex;
   grid-column: 1 / -1;
-  grid-template-columns: auto auto;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   color: var(--app-text-soft);
-  font-size: 0.76rem;
-  line-height: 1.2;
+  font-size: 0.68rem;
+  line-height: 1;
 }
 
 .preview-zoom-readout strong {
@@ -498,11 +511,18 @@ select {
     padding: 12px;
   }
 
+  .controls-panel,
   .preview-panel,
   .properties-panel {
     position: static;
     height: auto;
     max-height: none;
+  }
+
+  .controls-panel {
+    direction: ltr;
+    overflow: visible;
+    padding-left: 0;
   }
 
   .preview-panel {
@@ -520,7 +540,7 @@ select {
   .preview-zoom-controls {
     right: 10px;
     bottom: 10px;
-    grid-template-columns: 34px minmax(94px, 1fr) 34px;
+    grid-template-columns: 28px minmax(78px, 1fr) 28px;
   }
 
   .preview-fit-button {

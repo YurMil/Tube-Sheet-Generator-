@@ -15,6 +15,11 @@ type Viewport = {
   panY: number;
 };
 
+type CanvasSize = {
+  width: number;
+  height: number;
+};
+
 type DragState = {
   pointerId: number;
   startX: number;
@@ -85,8 +90,10 @@ export default function PreviewCanvas({
   const dragRef = useRef<DragState | null>(null);
   const suppressClickRef = useRef(false);
   const animationFrameRef = useRef<number | null>(null);
+  const resizeAnimationFrameRef = useRef<number | null>(null);
   const pendingViewportRef = useRef<Viewport | null>(null);
   const [viewport, setViewport] = useState<Viewport>({zoom: 1, panX: 0, panY: 0});
+  const [canvasSize, setCanvasSize] = useState<CanvasSize>({width: 0, height: 0});
   const [visibleCount, setVisibleCount] = useState(points.length);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
 
@@ -384,14 +391,58 @@ export default function PreviewCanvas({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    const syncCanvasSize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.round(rect.width);
+      const height = Math.round(rect.height);
+      setCanvasSize((current) => (current.width === width && current.height === height ? current : {width, height}));
+    };
+
+    const scheduleCanvasSizeSync = () => {
+      if (resizeAnimationFrameRef.current !== null) return;
+      resizeAnimationFrameRef.current = window.requestAnimationFrame(() => {
+        resizeAnimationFrameRef.current = null;
+        syncCanvasSize();
+      });
+    };
+
+    syncCanvasSize();
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const resizeObserver = new ResizeObserver(scheduleCanvasSizeSync);
+      resizeObserver.observe(canvas);
+      return () => {
+        resizeObserver.disconnect();
+        if (resizeAnimationFrameRef.current !== null) {
+          window.cancelAnimationFrame(resizeAnimationFrameRef.current);
+          resizeAnimationFrameRef.current = null;
+        }
+      };
+    }
+
+    window.addEventListener('resize', scheduleCanvasSizeSync);
+    return () => {
+      window.removeEventListener('resize', scheduleCanvasSizeSync);
+      if (resizeAnimationFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeAnimationFrameRef.current);
+        resizeAnimationFrameRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
 
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     ctx.clearRect(0, 0, rect.width, rect.height);
@@ -582,12 +633,15 @@ export default function PreviewCanvas({
     }
 
     setVisibleCount((current) => (current === nextVisibleCount ? current : nextVisibleCount));
-  }, [modifiedHoles, params, points, selectedHoleKeys, selectionBox, themeMode, viewport]);
+  }, [canvasSize, modifiedHoles, params, points, selectedHoleKeys, selectionBox, themeMode, viewport]);
 
   useEffect(() => {
     return () => {
       if (animationFrameRef.current !== null) {
         window.cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (resizeAnimationFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeAnimationFrameRef.current);
       }
     };
   }, []);
