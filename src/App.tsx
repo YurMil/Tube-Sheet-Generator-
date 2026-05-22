@@ -87,10 +87,10 @@ export default function App() {
 
       addExistingPoint(point);
       if (mirrorHorizontal) {
-        addExistingPoint({x: point.x, y: -point.y});
+        addExistingPoint({x: -point.x, y: point.y});
       }
       if (mirrorVertical) {
-        addExistingPoint({x: -point.x, y: point.y});
+        addExistingPoint({x: point.x, y: -point.y});
       }
       if (mirrorHorizontal && mirrorVertical) {
         addExistingPoint({x: -point.x, y: -point.y});
