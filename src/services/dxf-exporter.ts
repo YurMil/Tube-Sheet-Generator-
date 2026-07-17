@@ -1,5 +1,5 @@
 import type {GeneratorParams, ModifiedHole, Point} from '../types';
-import {createPointKey} from '../core/geometry-utils';
+import {createPointKey, getPartitionOffsets} from '../core/geometry-utils';
 
 type DxfLine = {x1: number; y1: number; x2: number; y2: number};
 
@@ -22,57 +22,30 @@ const buildSquareHole = (layer: string, coord: Point, size: number) => {
 };
 
 const buildPartitionLines = (params: GeneratorParams): DxfLine[] => {
-  if (params.passCount <= 1) {
-    return [];
-  }
-
   const boardRadius = params.boardDiameter / 2;
   const halfPartition = params.partitionWidth / 2;
-  const numPartitions = params.passCount - 1;
   const lines: DxfLine[] = [];
 
-  if (params.partitionOrientation === 'horizontal') {
-    const totalHeight = boardRadius * 2;
-    const sectionHeight = totalHeight / params.passCount;
-    for (let i = 1; i <= numPartitions; i++) {
-      const yPos = boardRadius - i * sectionHeight;
-      const halfWidth = Math.sqrt(Math.abs(boardRadius * boardRadius - yPos * yPos));
-      lines.push({
-        x1: -halfWidth,
-        y1: yPos - halfPartition,
-        x2: halfWidth,
-        y2: yPos - halfPartition,
-      });
-      lines.push({
-        x1: -halfWidth,
-        y1: yPos + halfPartition,
-        x2: halfWidth,
-        y2: yPos + halfPartition,
-      });
+  getPartitionOffsets(params).forEach((offset) => {
+    const halfSpan = Math.sqrt(Math.abs(boardRadius * boardRadius - offset * offset));
+    if (params.partitionOrientation === 'horizontal') {
+      lines.push({x1: -halfSpan, y1: offset - halfPartition, x2: halfSpan, y2: offset - halfPartition});
+      lines.push({x1: -halfSpan, y1: offset + halfPartition, x2: halfSpan, y2: offset + halfPartition});
+    } else {
+      lines.push({x1: offset - halfPartition, y1: -halfSpan, x2: offset - halfPartition, y2: halfSpan});
+      lines.push({x1: offset + halfPartition, y1: -halfSpan, x2: offset + halfPartition, y2: halfSpan});
     }
-  } else {
-    const totalWidth = boardRadius * 2;
-    const sectionWidth = totalWidth / params.passCount;
-    for (let i = 1; i <= numPartitions; i++) {
-      const xPos = boardRadius - i * sectionWidth;
-      const halfHeight = Math.sqrt(Math.abs(boardRadius * boardRadius - xPos * xPos));
-      lines.push({
-        x1: xPos - halfPartition,
-        y1: -halfHeight,
-        x2: xPos - halfPartition,
-        y2: halfHeight,
-      });
-      lines.push({
-        x1: xPos + halfPartition,
-        y1: -halfHeight,
-        x2: xPos + halfPartition,
-        y2: halfHeight,
-      });
-    }
-  }
+  });
 
   return lines;
 };
+
+// Minimal HEADER so strict importers (AutoCAD) recognise the file and,
+// crucially, treat coordinates as millimetres ($INSUNITS = 4).
+const buildHeader = () =>
+  ['0', 'SECTION', '2', 'HEADER', '9', '$ACADVER', '1', 'AC1015', '9', '$INSUNITS', '70', '4', '0', 'ENDSEC'].join(
+    '\n',
+  );
 
 const buildLayerTable = () => {
   return [
@@ -142,7 +115,7 @@ export const buildTubeSheetDxf = (
   const tubeRadius = params.tubeDiameter / 2;
   const partitions = buildPartitionLines(params);
 
-  let dxf = `${buildLayerTable()}\n0\nSECTION\n2\nENTITIES\n`;
+  let dxf = `${buildHeader()}\n${buildLayerTable()}\n0\nSECTION\n2\nENTITIES\n`;
   dxf += `0\nCIRCLE\n8\nSHEET\n10\n0.0\n20\n0.0\n30\n0.0\n40\n${boardRadius}\n`;
 
   tubeCoords.forEach((coord) => {

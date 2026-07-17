@@ -1,8 +1,8 @@
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useCallback, useDeferredValue, useEffect, useMemo, useRef, useState} from 'react';
 import type React from 'react';
-import {DEFAULT_PARAMS} from '../constants';
+import {DEFAULT_PARAMS, MAX_TUBE_POINTS} from '../constants';
 import {getLayoutStrategy} from '../core/layout-strategies';
-import {isWithinCutoffZone} from '../core/geometry-utils';
+import {estimateLayoutPointCount, isWithinCutoffZone} from '../core/geometry-utils';
 import type {GeneratorParams, ModifiedHole, Point} from '../types';
 import {generateStepInWorker, warmupCadWorker} from '../services/cad-worker-client';
 import type {CadWorkerProgressMessage} from '../services/cad-worker-protocol';
@@ -19,6 +19,8 @@ export type UseGeneratorStateResult = {
   params: GeneratorParams;
   setParams: React.Dispatch<React.SetStateAction<GeneratorParams>>;
   tubeCoords: Point[];
+  layoutTooLarge: boolean;
+  estimatedPointCount: number;
   handleChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
   workerStatus: WorkerStatus;
   workerError: string | null;
@@ -26,6 +28,7 @@ export type UseGeneratorStateResult = {
   generateStep: (options?: {
     onProgress?: (message: CadWorkerProgressMessage) => void;
     modifiedHoles?: Map<string, ModifiedHole>;
+    timeoutMs?: number;
   }) => Promise<ArrayBuffer>;
 };
 
@@ -35,13 +38,27 @@ export default function useGeneratorState(): UseGeneratorStateResult {
   const [workerError, setWorkerError] = useState<string | null>(null);
   const warmupStarted = useRef(false);
 
-  const tubeCoords = useMemo<Point[]>(
-    () =>
-      getLayoutStrategy(params.tubeLayout)
-        .calculatePoints(params)
-        .filter((point) => !isWithinCutoffZone(point, params)),
-    [params],
+  // Keep form inputs responsive: the expensive layout runs against a deferred
+  // copy of params, so typing never blocks on the point computation.
+  const deferredParams = useDeferredValue(params);
+
+  const estimatedPointCount = useMemo(
+    () => estimateLayoutPointCount(deferredParams),
+    [deferredParams],
   );
+
+  // Guard against pathological inputs (huge diameter + tiny pitch) that would
+  // otherwise spin an O((D/pitch)^2) loop on the main thread and freeze the tab.
+  const layoutTooLarge = estimatedPointCount > MAX_TUBE_POINTS;
+
+  const tubeCoords = useMemo<Point[]>(() => {
+    if (layoutTooLarge) {
+      return [];
+    }
+    return getLayoutStrategy(deferredParams.tubeLayout)
+      .calculatePoints(deferredParams)
+      .filter((point) => !isWithinCutoffZone(point, deferredParams));
+  }, [deferredParams, layoutTooLarge]);
 
   const warmupWorker = useCallback(async () => {
     if (workerStatus === 'ready') return;
@@ -88,11 +105,15 @@ export default function useGeneratorState(): UseGeneratorStateResult {
     async (options?: {
       onProgress?: (message: CadWorkerProgressMessage) => void;
       modifiedHoles?: Map<string, ModifiedHole>;
+      timeoutMs?: number;
     }) => {
       if (workerStatus !== 'ready') {
         await warmupWorker();
       }
-      return generateStepInWorker(params, tubeCoords, options?.modifiedHoles, {onProgress: options?.onProgress});
+      return generateStepInWorker(params, tubeCoords, options?.modifiedHoles, {
+        onProgress: options?.onProgress,
+        timeoutMs: options?.timeoutMs,
+      });
     },
     [params, tubeCoords, warmupWorker, workerStatus],
   );
@@ -101,6 +122,8 @@ export default function useGeneratorState(): UseGeneratorStateResult {
     params,
     setParams,
     tubeCoords,
+    layoutTooLarge,
+    estimatedPointCount,
     handleChange,
     workerStatus,
     workerError,

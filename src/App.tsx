@@ -5,7 +5,9 @@ import GeneratorForm from './ui/GeneratorForm';
 import PreviewCanvas from './ui/PreviewCanvas';
 import useGeneratorState from './hooks/useGeneratorState';
 import useSyncedTheme from './hooks/useSyncedTheme';
-import {createPointKey} from './core/geometry-utils';
+import {createPointKey, isWithinPartitionBand} from './core/geometry-utils';
+import {cancelCadWorker, CadWorkerCancelledError} from './services/cad-worker-client';
+import {MAX_TUBE_POINTS, STEP_TIMEOUT_MS} from './constants';
 import type {GeneratorParams, HoleShape, HoleType, ModifiedHole, Point} from './types';
 
 const downloadBlob = (blob: Blob, filename: string) => {
@@ -38,7 +40,17 @@ export default function App() {
   const [mirrorVertical, setMirrorVertical] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   const themeMode = useSyncedTheme();
-  const {params, setParams, tubeCoords, handleChange, generateStep, workerStatus, workerError} = useGeneratorState();
+  const {
+    params,
+    setParams,
+    tubeCoords,
+    layoutTooLarge,
+    estimatedPointCount,
+    handleChange,
+    generateStep,
+    workerStatus,
+    workerError,
+  } = useGeneratorState();
 
   const pointByKey = useMemo(() => {
     const next = new Map<string, Point>();
@@ -49,6 +61,10 @@ export default function App() {
   const tubeStats = useMemo(() => {
     let hidden = 0;
     let tieRods = 0;
+    let heatTransferArea = 0;
+    let partitionConflicts = 0;
+    let edgeOverflow = 0;
+    const boardRadius = params.boardDiameter / 2;
 
     tubeCoords.forEach((point) => {
       const modified = modifiedHoles.get(createPointKey(point));
@@ -56,18 +72,34 @@ export default function App() {
         hidden += 1;
         return;
       }
+
+      const diameter = modified?.diameter ?? params.tubeDiameter;
+      const radius = diameter / 2;
+
+      if (Math.hypot(point.x, point.y) + radius > boardRadius + 1e-6) {
+        edgeOverflow += 1;
+      }
+      if (isWithinPartitionBand(point, radius, params)) {
+        partitionConflicts += 1;
+      }
+
       if (modified?.type === 'tieRod') {
         tieRods += 1;
+        return;
       }
+
+      // Heat-transfer surface uses each active tube's real outer diameter, not
+      // the nominal one, so mixed-diameter sheets report a correct area.
+      heatTransferArea += Math.PI * diameter * params.tubeLength;
     });
 
     const cutHoles = Math.max(0, tubeCoords.length - hidden);
     const activeTubes = Math.max(0, cutHoles - tieRods);
 
-    return {hidden, tieRods, cutHoles, activeTubes};
-  }, [modifiedHoles, tubeCoords]);
+    return {hidden, tieRods, cutHoles, activeTubes, heatTransferArea, partitionConflicts, edgeOverflow};
+  }, [modifiedHoles, params, tubeCoords]);
 
-  const heatTransferArea = tubeStats.activeTubes * Math.PI * params.tubeDiameter * params.tubeLength;
+  const heatTransferArea = tubeStats.heatTransferArea;
   const pitchRatioWarning = params.tubePitch < params.tubeDiameter * 1.25;
 
   const selectedCount = selectedHoleKeys.size;
@@ -108,6 +140,10 @@ export default function App() {
     downloadBlob(blob, `tubesheet_${params.boardDiameter}mm.dxf`);
   };
 
+  const handleCancelSTEP = () => {
+    cancelCadWorker();
+  };
+
   const handleDownloadSTEP = async () => {
     setIsGeneratingStep(true);
     setStepError(null);
@@ -116,6 +152,7 @@ export default function App() {
     try {
       const stepArrayBuffer = await generateStep({
         modifiedHoles,
+        timeoutMs: STEP_TIMEOUT_MS,
         onProgress: (message) => {
           if (message.stage === 'init') {
             setGenerationStatus('Loading CAD kernel...');
@@ -133,8 +170,12 @@ export default function App() {
       const blob = new Blob([stepArrayBuffer], {type: 'application/step'});
       downloadBlob(blob, `tubesheet_${params.boardDiameter}mm.step`);
     } catch (error) {
-      console.error('STEP generation failed:', error);
-      setStepError(error instanceof Error ? error.message : String(error));
+      if (error instanceof CadWorkerCancelledError) {
+        setStepError(null);
+      } else {
+        console.error('STEP generation failed:', error);
+        setStepError(error instanceof Error ? error.message : String(error));
+      }
     } finally {
       setIsGeneratingStep(false);
       setGenerationStatus('');
@@ -377,13 +418,36 @@ export default function App() {
               Pitch warning: tube pitch should be at least {(params.tubeDiameter * 1.25).toFixed(2)} mm.
             </p>
           ) : null}
+          {tubeStats.partitionConflicts > 0 ? (
+            <p className="warning-text">
+              {tubeStats.partitionConflicts} tube{tubeStats.partitionConflicts === 1 ? '' : 's'} overlap the pass
+              partition lane and would collide with the partition plate.
+            </p>
+          ) : null}
+          {tubeStats.edgeOverflow > 0 ? (
+            <p className="warning-text">
+              {tubeStats.edgeOverflow} hole{tubeStats.edgeOverflow === 1 ? '' : 's'} extend past the sheet edge (custom
+              diameter too large).
+            </p>
+          ) : null}
+          {layoutTooLarge ? (
+            <p className="error-text">
+              Layout too large (~{estimatedPointCount.toLocaleString()} holes, limit{' '}
+              {MAX_TUBE_POINTS.toLocaleString()}). Increase pitch or reduce diameter to preview and export.
+            </p>
+          ) : null}
 
           <div className="worker-status" data-status={workerStatus}>
             CAD worker: {workerStatus}
             {workerError ? <span> - {workerError}</span> : null}
           </div>
 
-          <button type="button" className="button secondary" onClick={handleDownloadDXF}>
+          <button
+            type="button"
+            className="button secondary"
+            onClick={handleDownloadDXF}
+            disabled={layoutTooLarge}
+          >
             Download .DXF (2D)
           </button>
 
@@ -406,10 +470,16 @@ export default function App() {
             type="button"
             className="button primary"
             onClick={handleDownloadSTEP}
-            disabled={isGeneratingStep}
+            disabled={isGeneratingStep || layoutTooLarge}
           >
             {isGeneratingStep ? 'Generating 3D...' : 'Download .STEP (3D)'}
           </button>
+
+          {isGeneratingStep ? (
+            <button type="button" className="button secondary" onClick={handleCancelSTEP}>
+              Cancel generation
+            </button>
+          ) : null}
 
           {isGeneratingStep ? (
             <p className="status-text">{generationStatus || 'Processing geometry in the browser...'}</p>
