@@ -2,10 +2,10 @@ import {useCallback, useEffect, useMemo, useState} from 'react';
 import type React from 'react';
 import {createPointKey} from '../core/geometry-utils';
 import {isModifiedHoleDefault} from '../core/modified-hole';
-import type {HoleShape, HoleType, ModifiedHole, Point} from '../types';
+import type {HoleShape, HoleType, KeyedPoint, ModifiedHole, Point} from '../types';
 
 type UseHoleEditingArgs = {
-  tubeCoords: Point[];
+  keyedTubes: KeyedPoint[];
   tubeDiameter: number;
   modifiedHoles: Map<string, ModifiedHole>;
   setModifiedHoles: React.Dispatch<React.SetStateAction<Map<string, ModifiedHole>>>;
@@ -16,17 +16,18 @@ type UseHoleEditingArgs = {
  * per-hole edit operations (type, diameter, visibility, shape, reset). Keeps
  * the selection in sync with the current layout and wires keyboard shortcuts.
  */
-export default function useHoleEditing({tubeCoords, tubeDiameter, modifiedHoles, setModifiedHoles}: UseHoleEditingArgs) {
+export default function useHoleEditing({keyedTubes, tubeDiameter, modifiedHoles, setModifiedHoles}: UseHoleEditingArgs) {
   const [selectedHoleKeys, setSelectedHoleKeys] = useState<Set<string>>(new Set());
   const [menuDiameter, setMenuDiameter] = useState('');
   const [mirrorHorizontal, setMirrorHorizontal] = useState(false);
   const [mirrorVertical, setMirrorVertical] = useState(false);
 
+  // Built from the shared keyed points — no createPointKey pass here.
   const pointByKey = useMemo(() => {
     const next = new Map<string, Point>();
-    tubeCoords.forEach((point) => next.set(createPointKey(point), point));
+    keyedTubes.forEach(({point, key}) => next.set(key, point));
     return next;
-  }, [tubeCoords]);
+  }, [keyedTubes]);
 
   const affectedHoleKeys = useMemo(() => {
     const next = new Set<string>();

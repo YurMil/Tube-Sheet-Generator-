@@ -1,9 +1,17 @@
-import type {GeneratorParams, Point} from '../types';
+import type {GeneratorParams, KeyedPoint, Point} from '../types';
 
 export const normalizeZero = (value: number) => (Math.abs(value) < 1e-6 ? 0 : value);
 
 export const createPointKey = (point: Point) =>
   `${normalizeZero(point.x).toFixed(4)}:${normalizeZero(point.y).toFixed(4)}`;
+
+/**
+ * Pair each point with its string key in a single pass. Compute this once per
+ * layout and share the result so preview, editing and stats don't each rebuild
+ * keys (the dominant per-layout cost on dense sheets).
+ */
+export const keyPoints = (points: Point[]): KeyedPoint[] =>
+  points.map((point) => ({point, key: createPointKey(point)}));
 
 export const isFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
