@@ -19,6 +19,25 @@ export const validateLayoutParams = (params: GeneratorParams) => {
 export const getSafeRadius = (params: GeneratorParams) =>
   params.boardDiameter / 2 - params.edgeMargin - params.tubeDiameter / 2;
 
+/**
+ * Upper-bound estimate of how many tube points a layout would produce, used to
+ * bail out before running the O((D/pitch)^2) point loop on huge inputs. The
+ * tightest row spacing across all layouts is pitch/sqrt(2), so this is a safe
+ * (over-)estimate for every strategy.
+ */
+export const estimateLayoutPointCount = (params: GeneratorParams) => {
+  if (!validateLayoutParams(params)) {
+    return 0;
+  }
+  const safeRadius = getSafeRadius(params);
+  if (safeRadius <= 0) {
+    return 0;
+  }
+  const minSpacing = params.tubePitch / Math.SQRT2;
+  // Circle area / cell area, with a small safety factor for boundary rows.
+  return Math.ceil((Math.PI * safeRadius * safeRadius) / (minSpacing * minSpacing)) + 1;
+};
+
 export const isWithinRadius = (point: Point, radius: number) =>
   Math.sqrt(point.x * point.x + point.y * point.y) <= radius;
 

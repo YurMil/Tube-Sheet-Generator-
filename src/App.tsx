@@ -6,6 +6,8 @@ import PreviewCanvas from './ui/PreviewCanvas';
 import useGeneratorState from './hooks/useGeneratorState';
 import useSyncedTheme from './hooks/useSyncedTheme';
 import {createPointKey} from './core/geometry-utils';
+import {cancelCadWorker, CadWorkerCancelledError} from './services/cad-worker-client';
+import {MAX_TUBE_POINTS, STEP_TIMEOUT_MS} from './constants';
 import type {GeneratorParams, HoleShape, HoleType, ModifiedHole, Point} from './types';
 
 const downloadBlob = (blob: Blob, filename: string) => {
@@ -38,7 +40,17 @@ export default function App() {
   const [mirrorVertical, setMirrorVertical] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   const themeMode = useSyncedTheme();
-  const {params, setParams, tubeCoords, handleChange, generateStep, workerStatus, workerError} = useGeneratorState();
+  const {
+    params,
+    setParams,
+    tubeCoords,
+    layoutTooLarge,
+    estimatedPointCount,
+    handleChange,
+    generateStep,
+    workerStatus,
+    workerError,
+  } = useGeneratorState();
 
   const pointByKey = useMemo(() => {
     const next = new Map<string, Point>();
@@ -108,6 +120,10 @@ export default function App() {
     downloadBlob(blob, `tubesheet_${params.boardDiameter}mm.dxf`);
   };
 
+  const handleCancelSTEP = () => {
+    cancelCadWorker();
+  };
+
   const handleDownloadSTEP = async () => {
     setIsGeneratingStep(true);
     setStepError(null);
@@ -116,6 +132,7 @@ export default function App() {
     try {
       const stepArrayBuffer = await generateStep({
         modifiedHoles,
+        timeoutMs: STEP_TIMEOUT_MS,
         onProgress: (message) => {
           if (message.stage === 'init') {
             setGenerationStatus('Loading CAD kernel...');
@@ -133,8 +150,12 @@ export default function App() {
       const blob = new Blob([stepArrayBuffer], {type: 'application/step'});
       downloadBlob(blob, `tubesheet_${params.boardDiameter}mm.step`);
     } catch (error) {
-      console.error('STEP generation failed:', error);
-      setStepError(error instanceof Error ? error.message : String(error));
+      if (error instanceof CadWorkerCancelledError) {
+        setStepError(null);
+      } else {
+        console.error('STEP generation failed:', error);
+        setStepError(error instanceof Error ? error.message : String(error));
+      }
     } finally {
       setIsGeneratingStep(false);
       setGenerationStatus('');
@@ -377,13 +398,24 @@ export default function App() {
               Pitch warning: tube pitch should be at least {(params.tubeDiameter * 1.25).toFixed(2)} mm.
             </p>
           ) : null}
+          {layoutTooLarge ? (
+            <p className="error-text">
+              Layout too large (~{estimatedPointCount.toLocaleString()} holes, limit{' '}
+              {MAX_TUBE_POINTS.toLocaleString()}). Increase pitch or reduce diameter to preview and export.
+            </p>
+          ) : null}
 
           <div className="worker-status" data-status={workerStatus}>
             CAD worker: {workerStatus}
             {workerError ? <span> - {workerError}</span> : null}
           </div>
 
-          <button type="button" className="button secondary" onClick={handleDownloadDXF}>
+          <button
+            type="button"
+            className="button secondary"
+            onClick={handleDownloadDXF}
+            disabled={layoutTooLarge}
+          >
             Download .DXF (2D)
           </button>
 
@@ -406,10 +438,16 @@ export default function App() {
             type="button"
             className="button primary"
             onClick={handleDownloadSTEP}
-            disabled={isGeneratingStep}
+            disabled={isGeneratingStep || layoutTooLarge}
           >
             {isGeneratingStep ? 'Generating 3D...' : 'Download .STEP (3D)'}
           </button>
+
+          {isGeneratingStep ? (
+            <button type="button" className="button secondary" onClick={handleCancelSTEP}>
+              Cancel generation
+            </button>
+          ) : null}
 
           {isGeneratingStep ? (
             <p className="status-text">{generationStatus || 'Processing geometry in the browser...'}</p>
