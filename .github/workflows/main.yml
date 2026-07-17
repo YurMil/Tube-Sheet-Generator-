@@ -11,6 +11,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: publish-tube-sheet-generator
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -98,4 +102,14 @@ jobs:
           fi
 
           git commit -m "Deploy tube sheet generator static app"
-          git push origin main
+          # Reconcile with any concurrent host-repo change before pushing so a
+          # racing deploy fails the retry instead of the push.
+          for attempt in 1 2 3; do
+            if git push origin main; then
+              exit 0
+            fi
+            echo "Push rejected (attempt ${attempt}); rebasing on origin/main..."
+            git pull --rebase origin main
+          done
+          echo "Failed to push host site changes after 3 attempts." >&2
+          exit 1
