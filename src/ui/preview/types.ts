@@ -32,8 +32,4 @@ export type SpatialItem = {
   key: string;
 };
 
-/** A tube point paired with its precomputed key, built once per points change. */
-export type KeyedPoint = {
-  point: Point;
-  key: string;
-};
+export type {KeyedPoint} from '../../types';

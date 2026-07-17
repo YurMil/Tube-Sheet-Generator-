@@ -1,13 +1,11 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 import type React from 'react';
 import type {ThemeMode} from '../../hooks/useSyncedTheme';
-import type {ModifiedHole, Point} from '../../types';
-import {createPointKey} from '../../core/geometry-utils';
+import type {KeyedPoint, ModifiedHole, Point} from '../../types';
 import {getSheetColors} from './colors';
 import {renderScene} from './renderScene';
 import type {PreviewParams} from './renderScene';
 import {ZOOM_STEP} from './types';
-import type {KeyedPoint} from './types';
 import useCanvasSize from './hooks/useCanvasSize';
 import useSpatialIndex from './hooks/useSpatialIndex';
 import useViewport from './hooks/useViewport';
@@ -16,7 +14,7 @@ import usePointerInteraction from './hooks/usePointerInteraction';
 import ZoomControls from './ZoomControls';
 
 export type PreviewCanvasProps = {
-  points: Point[];
+  keyedPoints: KeyedPoint[];
   params: PreviewParams;
   modifiedHoles: Map<string, ModifiedHole>;
   selectedHoleKeys: Set<string>;
@@ -29,7 +27,7 @@ export type PreviewCanvasProps = {
 };
 
 export default function PreviewCanvas({
-  points,
+  keyedPoints,
   params,
   modifiedHoles,
   selectedHoleKeys,
@@ -41,14 +39,7 @@ export default function PreviewCanvas({
   style,
 }: PreviewCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [visibleCount, setVisibleCount] = useState(points.length);
-
-  // Precompute keys once per points change; the render path and spatial index
-  // reuse them instead of rebuilding a key per point per frame.
-  const keyedPoints = useMemo<KeyedPoint[]>(
-    () => points.map((point) => ({point, key: createPointKey(point)})),
-    [points],
-  );
+  const [visibleCount, setVisibleCount] = useState(keyedPoints.length);
 
   // View-independent: recompute only when the layout or hidden set changes, not
   // on every pan/zoom frame.
@@ -145,7 +136,7 @@ export default function PreviewCanvas({
       <ZoomControls
         zoom={viewport.zoom}
         visibleCount={visibleCount}
-        totalCount={points.length}
+        totalCount={keyedPoints.length}
         onZoomIn={() => zoomToCenter(ZOOM_STEP)}
         onZoomOut={() => zoomToCenter(1 / ZOOM_STEP)}
         onZoomChange={(zoom) => setViewport((current) => ({...current, zoom}))}

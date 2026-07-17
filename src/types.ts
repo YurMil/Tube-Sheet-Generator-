@@ -1,5 +1,8 @@
 export type Point = {x: number; y: number};
 
+/** A tube point paired with its precomputed string key (see createPointKey). */
+export type KeyedPoint = {point: Point; key: string};
+
 export type LayoutType = 'triangular30' | 'triangular' | 'square45' | 'square';
 export type PartitionOrientation = 'horizontal' | 'vertical';
 

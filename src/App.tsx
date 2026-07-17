@@ -8,6 +8,7 @@ import useSyncedTheme from './hooks/useSyncedTheme';
 import useHoleEditing from './hooks/useHoleEditing';
 import useSession from './hooks/useSession';
 import {computeTubeStats} from './core/tube-stats';
+import {keyPoints} from './core/geometry-utils';
 import type {ModifiedHole} from './types';
 
 export default function App() {
@@ -27,8 +28,11 @@ export default function App() {
 
   const [modifiedHoles, setModifiedHoles] = useState<Map<string, ModifiedHole>>(new Map());
 
+  // Single point-key computation per layout, shared by preview, editing and stats.
+  const keyedTubes = useMemo(() => keyPoints(tubeCoords), [tubeCoords]);
+
   const editing = useHoleEditing({
-    tubeCoords,
+    keyedTubes,
     tubeDiameter: params.tubeDiameter,
     modifiedHoles,
     setModifiedHoles,
@@ -46,7 +50,7 @@ export default function App() {
     generateStep,
   });
 
-  const stats = useMemo(() => computeTubeStats(tubeCoords, modifiedHoles, params), [modifiedHoles, params, tubeCoords]);
+  const stats = useMemo(() => computeTubeStats(keyedTubes, modifiedHoles, params), [keyedTubes, modifiedHoles, params]);
 
   return (
     <main className="app-shell">
@@ -77,7 +81,7 @@ export default function App() {
       <section className="preview-panel">
         <div className="preview-frame">
           <PreviewCanvas
-            points={tubeCoords}
+            keyedPoints={keyedTubes}
             params={params}
             modifiedHoles={modifiedHoles}
             selectedHoleKeys={editing.affectedHoleKeys}

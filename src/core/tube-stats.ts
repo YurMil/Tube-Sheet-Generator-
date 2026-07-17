@@ -1,5 +1,5 @@
-import type {GeneratorParams, ModifiedHole, Point} from '../types';
-import {createPointKey, isWithinPartitionBand} from './geometry-utils';
+import type {GeneratorParams, KeyedPoint, ModifiedHole} from '../types';
+import {isWithinPartitionBand} from './geometry-utils';
 
 export type TubeStats = {
   hidden: number;
@@ -19,7 +19,7 @@ export type TubeStats = {
  * hole's per-hole overrides (hidden / custom diameter / tie rod).
  */
 export const computeTubeStats = (
-  tubeCoords: Point[],
+  keyedTubes: KeyedPoint[],
   modifiedHoles: Map<string, ModifiedHole>,
   params: GeneratorParams,
 ): TubeStats => {
@@ -30,8 +30,8 @@ export const computeTubeStats = (
   let edgeOverflow = 0;
   const boardRadius = params.boardDiameter / 2;
 
-  tubeCoords.forEach((point) => {
-    const modified = modifiedHoles.get(createPointKey(point));
+  keyedTubes.forEach(({point, key}) => {
+    const modified = modifiedHoles.get(key);
     if (modified?.hidden) {
       hidden += 1;
       return;
@@ -57,7 +57,7 @@ export const computeTubeStats = (
     heatTransferArea += Math.PI * diameter * params.tubeLength;
   });
 
-  const cutHoles = Math.max(0, tubeCoords.length - hidden);
+  const cutHoles = Math.max(0, keyedTubes.length - hidden);
   const activeTubes = Math.max(0, cutHoles - tieRods);
 
   return {hidden, tieRods, cutHoles, activeTubes, heatTransferArea, partitionConflicts, edgeOverflow};
