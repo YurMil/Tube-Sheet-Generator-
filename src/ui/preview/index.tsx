@@ -50,6 +50,21 @@ export default function PreviewCanvas({
     [points],
   );
 
+  // View-independent: recompute only when the layout or hidden set changes, not
+  // on every pan/zoom frame.
+  const outerTubeLimitRadius = useMemo(() => {
+    let max = 0;
+    for (const {point, key} of keyedPoints) {
+      if (!modifiedHoles.get(key)?.hidden) {
+        const distance = Math.sqrt(point.x * point.x + point.y * point.y);
+        if (distance > max) {
+          max = distance;
+        }
+      }
+    }
+    return max;
+  }, [keyedPoints, modifiedHoles]);
+
   const canvasSize = useCanvasSize(canvasRef);
   const {hitTest, queryBox} = useSpatialIndex(keyedPoints, modifiedHoles, params.tubeDiameter);
   const {viewport, setViewport, scheduleViewport, zoomAt, zoomToCenter, resetViewport} = useViewport(
@@ -96,10 +111,21 @@ export default function PreviewCanvas({
       selectionBox,
       rectLeft: rect.left,
       rectTop: rect.top,
+      outerTubeLimitRadius,
     });
 
     setVisibleCount((current) => (current === nextVisibleCount ? current : nextVisibleCount));
-  }, [canvasSize, keyedPoints, modifiedHoles, params, selectedHoleKeys, selectionBox, themeMode, viewport]);
+  }, [
+    canvasSize,
+    keyedPoints,
+    modifiedHoles,
+    outerTubeLimitRadius,
+    params,
+    selectedHoleKeys,
+    selectionBox,
+    themeMode,
+    viewport,
+  ]);
 
   return (
     <>
