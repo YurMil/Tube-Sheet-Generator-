@@ -278,14 +278,21 @@ export default function PreviewCanvas({
     [getHitPoint, onHoleClick, onCanvasClick],
   );
 
-  const handleWheel = useCallback(
-    (event: React.WheelEvent<HTMLCanvasElement>) => {
+  // Bind wheel natively with {passive: false}: React attaches onWheel passively,
+  // so calling preventDefault there is ignored and warns in the console.
+  const zoomAtRef = useRef(zoomAt);
+  zoomAtRef.current = zoomAt;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const zoomFactor = event.deltaY > 0 ? 0.88 : 1.12;
-      zoomAt(event.clientX, event.clientY, zoomFactor);
-    },
-    [zoomAt],
-  );
+      zoomAtRef.current(event.clientX, event.clientY, zoomFactor);
+    };
+    canvas.addEventListener('wheel', onWheel, {passive: false});
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, []);
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -639,7 +646,6 @@ export default function PreviewCanvas({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         onMouseLeave={handleLeave}
-        onWheel={handleWheel}
         onDoubleClick={resetViewport}
         onContextMenu={(event) => event.preventDefault()}
       />

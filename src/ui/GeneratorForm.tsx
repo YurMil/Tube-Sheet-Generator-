@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import type {GeneratorParams, LayoutType, PartitionOrientation} from '../types';
 
 type SelectOption<T extends string> = {value: T; label: string};
@@ -75,6 +75,59 @@ const formSections: SectionConfig[] = [
   },
 ];
 
+type NumberFieldProps = {
+  id: string;
+  name: string;
+  label: string;
+  value: number;
+  min?: number;
+  step?: number;
+  onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+};
+
+/**
+ * Number input backed by a local text buffer so the user can clear the field
+ * and type intermediate values (e.g. "0." or an empty box) without it snapping
+ * back to the previous number on every keystroke. While the field is focused
+ * the raw text wins; on blur (or an external change like import/reset) it
+ * reconciles to the canonical numeric value from params.
+ */
+function NumberField({id, name, label, value, min, step, onChange}: NumberFieldProps) {
+  const [text, setText] = useState(() => String(value));
+  const focusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!focusedRef.current) {
+      setText(String(value));
+    }
+  }, [value]);
+
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <input
+        id={id}
+        type="number"
+        min={min}
+        step={step}
+        name={name}
+        value={text}
+        onFocus={() => {
+          focusedRef.current = true;
+        }}
+        onBlur={() => {
+          focusedRef.current = false;
+          setText(String(value));
+        }}
+        onChange={(event) => {
+          setText(event.target.value);
+          onChange(event);
+        }}
+      />
+    </div>
+  );
+}
+
 export type GeneratorFormProps = {
   params: GeneratorParams;
   onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
@@ -115,18 +168,16 @@ export default function GeneratorForm({params, onChange}: GeneratorFormProps) {
               }
 
               return (
-                <div key={String(key)} className="field">
-                  <label htmlFor={inputId}>{field.label}</label>
-                  <input
-                    id={inputId}
-                    type="number"
-                    min={field.min}
-                    step={field.step}
-                    name={String(key)}
-                    value={params[key] as number}
-                    onChange={onChange}
-                  />
-                </div>
+                <NumberField
+                  key={String(key)}
+                  id={inputId}
+                  name={String(key)}
+                  label={field.label}
+                  value={params[key] as number}
+                  min={field.min}
+                  step={field.step}
+                  onChange={onChange}
+                />
               );
             })}
           </div>

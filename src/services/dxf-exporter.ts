@@ -40,6 +40,13 @@ const buildPartitionLines = (params: GeneratorParams): DxfLine[] => {
   return lines;
 };
 
+// Minimal HEADER so strict importers (AutoCAD) recognise the file and,
+// crucially, treat coordinates as millimetres ($INSUNITS = 4).
+const buildHeader = () =>
+  ['0', 'SECTION', '2', 'HEADER', '9', '$ACADVER', '1', 'AC1015', '9', '$INSUNITS', '70', '4', '0', 'ENDSEC'].join(
+    '\n',
+  );
+
 const buildLayerTable = () => {
   return [
     '0',
@@ -108,7 +115,7 @@ export const buildTubeSheetDxf = (
   const tubeRadius = params.tubeDiameter / 2;
   const partitions = buildPartitionLines(params);
 
-  let dxf = `${buildLayerTable()}\n0\nSECTION\n2\nENTITIES\n`;
+  let dxf = `${buildHeader()}\n${buildLayerTable()}\n0\nSECTION\n2\nENTITIES\n`;
   dxf += `0\nCIRCLE\n8\nSHEET\n10\n0.0\n20\n0.0\n30\n0.0\n40\n${boardRadius}\n`;
 
   tubeCoords.forEach((coord) => {
