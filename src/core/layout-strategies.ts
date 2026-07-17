@@ -1,5 +1,10 @@
 import type {GeneratorParams, LayoutType, Point} from '../types';
-import {createPointCollector, getSafeRadius, validateLayoutParams} from './geometry-utils';
+import {
+  createPointCollector,
+  getSafeRadius,
+  isWithinCutoffZone,
+  validateLayoutParams,
+} from './geometry-utils';
 
 export interface LayoutStrategy {
   calculatePoints(params: GeneratorParams): Point[];
@@ -135,3 +140,13 @@ const strategies: Record<LayoutType, LayoutStrategy> = {
 };
 
 export const getLayoutStrategy = (layout: LayoutType) => strategies[layout];
+
+/**
+ * Full tube-point layout for the given params: the strategy points minus the
+ * impingement cut-off zones. Shared by the layout worker and its synchronous
+ * fallback so both paths produce identical results.
+ */
+export const computeLayoutPoints = (params: GeneratorParams): Point[] =>
+  getLayoutStrategy(params.tubeLayout)
+    .calculatePoints(params)
+    .filter((point) => !isWithinCutoffZone(point, params));
