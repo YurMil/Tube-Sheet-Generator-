@@ -17,6 +17,7 @@ export default function App() {
     setParams,
     tubeCoords,
     layoutTooLarge,
+    isGeneratingLayout,
     estimatedPointCount,
     handleChange,
     generateStep,
@@ -86,6 +87,12 @@ export default function App() {
             onBoxSelect={editing.handleBoxSelect}
             className="preview-canvas"
           />
+          {isGeneratingLayout ? (
+            <div className="preview-generating" role="status" aria-live="polite">
+              <span className="preview-generating__spinner" aria-hidden="true" />
+              Generating layout…
+            </div>
+          ) : null}
         </div>
         <p className="preview-note">
           Click holes to edit. Drag to box-select. Hold Ctrl or Cmd to add selections. Alt-drag or middle-drag pans.

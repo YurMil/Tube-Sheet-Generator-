@@ -366,6 +366,46 @@ select {
   user-select: none;
 }
 
+.preview-generating {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  background: var(--panel-bg);
+  box-shadow: var(--panel-shadow);
+  color: var(--app-text-soft);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.preview-generating__spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--zoom-border);
+  border-top-color: var(--field-focus);
+  border-radius: 50%;
+  animation: preview-spin 0.7s linear infinite;
+}
+
+@keyframes preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-generating__spinner {
+    animation-duration: 2s;
+  }
+}
+
 .preview-zoom-controls {
   position: absolute;
   right: 10px;
