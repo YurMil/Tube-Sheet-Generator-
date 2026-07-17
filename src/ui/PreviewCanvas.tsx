@@ -2,7 +2,7 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import RBush from 'rbush';
 import type {ThemeMode} from '../hooks/useSyncedTheme';
 import type {GeneratorParams, ModifiedHole, Point} from '../types';
-import {createPointKey} from '../core/geometry-utils';
+import {createPointKey, getPartitionOffsets} from '../core/geometry-utils';
 
 const MIN_ZOOM = 0.75;
 const MAX_ZOOM = 24;
@@ -574,46 +574,27 @@ export default function PreviewCanvas({
     if (params.passCount > 1) {
       const boardRadius = params.boardDiameter / 2;
       const halfPartition = params.partitionWidth / 2;
-      const numPartitions = params.passCount - 1;
 
       ctx.strokeStyle = partitionStroke;
       ctx.lineWidth = 1.5;
 
-      if (params.partitionOrientation === 'horizontal') {
-        const totalHeight = boardRadius * 2;
-        const sectionHeight = totalHeight / params.passCount;
-        for (let i = 1; i <= numPartitions; i++) {
-          const yPos = boardRadius - i * sectionHeight;
-          const halfWidth = Math.sqrt(Math.abs(boardRadius * boardRadius - yPos * yPos));
+      const strokeLine = (x1: number, y1: number, x2: number, y2: number) => {
+        ctx.beginPath();
+        ctx.moveTo(x1 * scale, -y1 * scale);
+        ctx.lineTo(x2 * scale, -y2 * scale);
+        ctx.stroke();
+      };
 
-          ctx.beginPath();
-          ctx.moveTo(-halfWidth * scale, -(yPos - halfPartition) * scale);
-          ctx.lineTo(halfWidth * scale, -(yPos - halfPartition) * scale);
-          ctx.stroke();
-
-          ctx.beginPath();
-          ctx.moveTo(-halfWidth * scale, -(yPos + halfPartition) * scale);
-          ctx.lineTo(halfWidth * scale, -(yPos + halfPartition) * scale);
-          ctx.stroke();
+      getPartitionOffsets(params).forEach((offset) => {
+        const halfSpan = Math.sqrt(Math.abs(boardRadius * boardRadius - offset * offset));
+        if (params.partitionOrientation === 'horizontal') {
+          strokeLine(-halfSpan, offset - halfPartition, halfSpan, offset - halfPartition);
+          strokeLine(-halfSpan, offset + halfPartition, halfSpan, offset + halfPartition);
+        } else {
+          strokeLine(offset - halfPartition, -halfSpan, offset - halfPartition, halfSpan);
+          strokeLine(offset + halfPartition, -halfSpan, offset + halfPartition, halfSpan);
         }
-      } else {
-        const totalWidth = boardRadius * 2;
-        const sectionWidth = totalWidth / params.passCount;
-        for (let i = 1; i <= numPartitions; i++) {
-          const xPos = boardRadius - i * sectionWidth;
-          const halfHeight = Math.sqrt(Math.abs(boardRadius * boardRadius - xPos * xPos));
-
-          ctx.beginPath();
-          ctx.moveTo((xPos - halfPartition) * scale, -halfHeight * scale);
-          ctx.lineTo((xPos - halfPartition) * scale, halfHeight * scale);
-          ctx.stroke();
-
-          ctx.beginPath();
-          ctx.moveTo((xPos + halfPartition) * scale, -halfHeight * scale);
-          ctx.lineTo((xPos + halfPartition) * scale, halfHeight * scale);
-          ctx.stroke();
-        }
-      }
+      });
     }
 
     ctx.restore();

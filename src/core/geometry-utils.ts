@@ -41,6 +41,42 @@ export const estimateLayoutPointCount = (params: GeneratorParams) => {
 export const isWithinRadius = (point: Point, radius: number) =>
   Math.sqrt(point.x * point.x + point.y * point.y) <= radius;
 
+/**
+ * Centre offsets of each pass-partition band from the sheet centre, along the
+ * partition's normal axis. Shared by the preview, the DXF exporter and the
+ * partition-conflict check so they can't drift apart.
+ */
+export const getPartitionOffsets = (params: Pick<GeneratorParams, 'boardDiameter' | 'passCount'>) => {
+  if (params.passCount <= 1) {
+    return [];
+  }
+  const boardRadius = params.boardDiameter / 2;
+  const section = (boardRadius * 2) / params.passCount;
+  const offsets: number[] = [];
+  for (let i = 1; i < params.passCount; i++) {
+    offsets.push(boardRadius - i * section);
+  }
+  return offsets;
+};
+
+/**
+ * True when a hole of the given radius overlaps any pass-partition band, i.e.
+ * it would physically collide with the partition plate.
+ */
+export const isWithinPartitionBand = (
+  point: Point,
+  radius: number,
+  params: Pick<GeneratorParams, 'boardDiameter' | 'passCount' | 'partitionOrientation' | 'partitionWidth'>,
+) => {
+  const offsets = getPartitionOffsets(params);
+  if (offsets.length === 0) {
+    return false;
+  }
+  const coordinate = params.partitionOrientation === 'horizontal' ? point.y : point.x;
+  const reach = params.partitionWidth / 2 + radius;
+  return offsets.some((offset) => Math.abs(coordinate - offset) < reach);
+};
+
 export const isWithinCutoffZone = (point: Point, params: GeneratorParams) => {
   const boardRadius = params.boardDiameter / 2;
   if (params.topCutoffChord > 0 && point.y >= boardRadius - params.topCutoffChord) {
