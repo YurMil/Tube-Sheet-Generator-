@@ -49,7 +49,7 @@ jobs:
           zip -r ../tube-sheet-generator-static.zip .
 
       - name: Upload static artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: tube-sheet-generator-static
           path: |
@@ -68,7 +68,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Download static artifact
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: tube-sheet-generator-static
 
