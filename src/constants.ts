@@ -24,3 +24,8 @@ export const MAX_TUBE_POINTS = 100_000;
 
 // Longest a STEP generation may run before the watchdog tears the worker down.
 export const STEP_TIMEOUT_MS = 180_000;
+
+// Grace period before showing the "Generating layout…" indicator. Fast layouts
+// resolve well within this, so the indicator only appears for large ones and
+// never flickers on ordinary edits.
+export const LAYOUT_PENDING_DELAY_MS = 150;

@@ -1,6 +1,6 @@
 import {useCallback, useDeferredValue, useEffect, useMemo, useRef, useState} from 'react';
 import type React from 'react';
-import {DEFAULT_PARAMS, MAX_TUBE_POINTS} from '../constants';
+import {DEFAULT_PARAMS, LAYOUT_PENDING_DELAY_MS, MAX_TUBE_POINTS} from '../constants';
 import {computeLayoutPoints} from '../core/layout-strategies';
 import {estimateLayoutPointCount} from '../core/geometry-utils';
 import type {GeneratorParams, ModifiedHole, Point} from '../types';
@@ -21,6 +21,7 @@ export type UseGeneratorStateResult = {
   setParams: React.Dispatch<React.SetStateAction<GeneratorParams>>;
   tubeCoords: Point[];
   layoutTooLarge: boolean;
+  isGeneratingLayout: boolean;
   estimatedPointCount: number;
   handleChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
   workerStatus: WorkerStatus;
@@ -58,19 +59,35 @@ export default function useGeneratorState(): UseGeneratorStateResult {
   // then let the worker update on every (deferred) change, ignoring stale
   // responses (latest request wins).
   const [tubeCoords, setTubeCoords] = useState<Point[]>(() => computeLayoutPoints(DEFAULT_PARAMS));
+  const [isGeneratingLayout, setIsGeneratingLayout] = useState(false);
   const layoutRequestSeq = useRef(0);
 
   useEffect(() => {
     if (layoutTooLarge) {
       setTubeCoords([]);
+      setIsGeneratingLayout(false);
       return;
     }
     const seq = ++layoutRequestSeq.current;
+    // Only surface the indicator if this request outlives the grace period, so
+    // ordinary fast layouts never flash it.
+    const pendingTimer = window.setTimeout(() => {
+      if (seq === layoutRequestSeq.current) {
+        setIsGeneratingLayout(true);
+      }
+    }, LAYOUT_PENDING_DELAY_MS);
+
     void requestLayout(deferredParams).then((points) => {
+      // Clear the grace timer so a fast resolve never lights the indicator
+      // after the fact.
+      window.clearTimeout(pendingTimer);
       if (seq === layoutRequestSeq.current) {
         setTubeCoords(points);
+        setIsGeneratingLayout(false);
       }
     });
+
+    return () => window.clearTimeout(pendingTimer);
   }, [deferredParams, layoutTooLarge]);
 
   const warmupWorker = useCallback(async () => {
@@ -136,6 +153,7 @@ export default function useGeneratorState(): UseGeneratorStateResult {
     setParams,
     tubeCoords,
     layoutTooLarge,
+    isGeneratingLayout,
     estimatedPointCount,
     handleChange,
     workerStatus,
