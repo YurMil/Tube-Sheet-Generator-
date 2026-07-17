@@ -1,4 +1,4 @@
-import type {GeneratorParams, ModifiedHole} from '../../types';
+import type {GeneratorParams, ModifiedHole, Point} from '../../types';
 import {getPartitionOffsets} from '../../core/geometry-utils';
 import type {SheetColors} from './colors';
 import type {KeyedPoint, SelectionBox, Viewport} from './types';
@@ -20,6 +20,8 @@ export type RenderSceneArgs = {
   selectionBox: SelectionBox | null;
   rectLeft: number;
   rectTop: number;
+  /** Precomputed radius of the outermost active hole centre (view-independent). */
+  outerTubeLimitRadius: number;
 };
 
 /**
@@ -39,6 +41,7 @@ export const renderScene = ({
   selectionBox,
   rectLeft,
   rectTop,
+  outerTubeLimitRadius,
 }: RenderSceneArgs): number => {
   ctx.clearRect(0, 0, rect.width, rect.height);
 
@@ -52,13 +55,6 @@ export const renderScene = ({
   const visibleMaxY = -(0 - originY) / scale;
   const visibleMinY = -(rect.height - originY) / scale;
   const cullPadding = Math.max(params.tubePitch ?? params.tubeDiameter, params.tubeDiameter);
-
-  let outerTubeLimitRadius = 0;
-  keyedPoints.forEach(({point, key}) => {
-    if (!modifiedHoles.get(key)?.hidden) {
-      outerTubeLimitRadius = Math.max(outerTubeLimitRadius, Math.sqrt(point.x * point.x + point.y * point.y));
-    }
-  });
   let nextVisibleCount = 0;
 
   ctx.save();
@@ -72,23 +68,37 @@ export const renderScene = ({
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  keyedPoints.forEach(({point: coord, key}) => {
-    const modified = modifiedHoles.get(key);
-    if (
-      coord.x < visibleMinX - cullPadding ||
-      coord.x > visibleMaxX + cullPadding ||
-      coord.y < visibleMinY - cullPadding ||
-      coord.y > visibleMaxY + cullPadding
-    ) {
-      return;
-    }
+  // Hot path: the common large layout has no per-hole overrides or selection,
+  // so every hole is a plain nominal-radius dot. In that case we skip the
+  // per-point Map.get / Set.has lookups entirely (those dominate the frame at
+  // 50k+ holes) and draw directly. Modified/selected holes take the full path.
+  const nominalRadiusPx = (params.tubeDiameter / 2) * scale;
+  const useFastDot = nominalRadiusPx < 1.4;
+  const hasOverrides = modifiedHoles.size > 0 || selectedHoleKeys.size > 0;
 
-    nextVisibleCount += 1;
+  const isCulled = (coord: Point) =>
+    coord.x < visibleMinX - cullPadding ||
+    coord.x > visibleMaxX + cullPadding ||
+    coord.y < visibleMinY - cullPadding ||
+    coord.y > visibleMaxY + cullPadding;
+
+  const drawPlainAt = (coord: Point) => {
+    const drawX = coord.x * scale;
+    const drawY = -coord.y * scale;
+    if (useFastDot) {
+      ctx.fillRect(drawX - 0.9, drawY - 0.9, 1.8, 1.8);
+    } else {
+      ctx.beginPath();
+      ctx.arc(drawX, drawY, nominalRadiusPx, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  };
+
+  const drawSpecial = (coord: Point, modified: ModifiedHole | undefined, selected: boolean) => {
     const isHidden = modified?.hidden === true;
     const isSpacer = modified?.diameter !== undefined;
     const isSquare = modified?.shape === 'square';
     const isTieRod = modified?.type === 'tieRod';
-    const isSelected = selectedHoleKeys.has(key);
     const radius = (modified?.diameter ?? params.tubeDiameter) / 2;
     const drawX = coord.x * scale;
     const drawY = -coord.y * scale;
@@ -102,15 +112,6 @@ export const renderScene = ({
         ctx.arc(drawX, drawY, drawRadius, 0, 2 * Math.PI);
       }
     };
-
-    const radiusPx = radius * scale;
-    const canDrawFastDot = radiusPx < 1.4 && !isHidden && !isSpacer && !isSquare && !isSelected && !isTieRod;
-
-    if (canDrawFastDot) {
-      ctx.fillStyle = colors.holeFill;
-      ctx.fillRect(drawX - 0.9, drawY - 0.9, 1.8, 1.8);
-      return;
-    }
 
     drawHolePath();
 
@@ -138,12 +139,41 @@ export const renderScene = ({
       ctx.fill();
     }
 
-    if (isSelected) {
+    if (selected) {
       drawHolePath(4);
       ctx.strokeStyle = colors.selectedStroke;
       ctx.lineWidth = 3;
       ctx.stroke();
     }
+  };
+
+  ctx.fillStyle = colors.holeFill;
+  keyedPoints.forEach(({point: coord, key}) => {
+    if (isCulled(coord)) {
+      return;
+    }
+    nextVisibleCount += 1;
+
+    if (!hasOverrides) {
+      drawPlainAt(coord);
+      return;
+    }
+
+    const modified = modifiedHoles.get(key);
+    const selected = selectedHoleKeys.has(key);
+    const isPlain =
+      !selected &&
+      !modified?.hidden &&
+      modified?.diameter === undefined &&
+      modified?.shape !== 'square' &&
+      modified?.type !== 'tieRod';
+
+    if (isPlain) {
+      ctx.fillStyle = colors.holeFill;
+      drawPlainAt(coord);
+      return;
+    }
+    drawSpecial(coord, modified, selected);
   });
 
   if (outerTubeLimitRadius > 0) {
