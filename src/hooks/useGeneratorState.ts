@@ -1,10 +1,11 @@
 import {useCallback, useDeferredValue, useEffect, useMemo, useRef, useState} from 'react';
 import type React from 'react';
 import {DEFAULT_PARAMS, MAX_TUBE_POINTS} from '../constants';
-import {getLayoutStrategy} from '../core/layout-strategies';
-import {estimateLayoutPointCount, isWithinCutoffZone} from '../core/geometry-utils';
+import {computeLayoutPoints} from '../core/layout-strategies';
+import {estimateLayoutPointCount} from '../core/geometry-utils';
 import type {GeneratorParams, ModifiedHole, Point} from '../types';
 import {generateStepInWorker, warmupCadWorker} from '../services/cad-worker-client';
+import {requestLayout} from '../services/layout-worker-client';
 import type {CadWorkerProgressMessage} from '../services/cad-worker-protocol';
 
 type WorkerStatus = 'idle' | 'warming' | 'ready' | 'error';
@@ -47,17 +48,29 @@ export default function useGeneratorState(): UseGeneratorStateResult {
     [deferredParams],
   );
 
-  // Guard against pathological inputs (huge diameter + tiny pitch) that would
-  // otherwise spin an O((D/pitch)^2) loop on the main thread and freeze the tab.
+  // Guard against pathological inputs (huge diameter + tiny pitch). The compute
+  // itself runs off-thread, but the canvas render and RBush index are still
+  // main-thread, so this cap protects those.
   const layoutTooLarge = estimatedPointCount > MAX_TUBE_POINTS;
 
-  const tubeCoords = useMemo<Point[]>(() => {
+  // Layout points are generated in a Web Worker so the UI thread stays free.
+  // Seed synchronously with the initial params to avoid a first-paint flash,
+  // then let the worker update on every (deferred) change, ignoring stale
+  // responses (latest request wins).
+  const [tubeCoords, setTubeCoords] = useState<Point[]>(() => computeLayoutPoints(DEFAULT_PARAMS));
+  const layoutRequestSeq = useRef(0);
+
+  useEffect(() => {
     if (layoutTooLarge) {
-      return [];
+      setTubeCoords([]);
+      return;
     }
-    return getLayoutStrategy(deferredParams.tubeLayout)
-      .calculatePoints(deferredParams)
-      .filter((point) => !isWithinCutoffZone(point, deferredParams));
+    const seq = ++layoutRequestSeq.current;
+    void requestLayout(deferredParams).then((points) => {
+      if (seq === layoutRequestSeq.current) {
+        setTubeCoords(points);
+      }
+    });
   }, [deferredParams, layoutTooLarge]);
 
   const warmupWorker = useCallback(async () => {
