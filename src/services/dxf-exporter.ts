@@ -40,10 +40,13 @@ const buildPartitionLines = (params: GeneratorParams): DxfLine[] => {
   return lines;
 };
 
-// Minimal HEADER so strict importers (AutoCAD) recognise the file and,
-// crucially, treat coordinates as millimetres ($INSUNITS = 4).
+// Declare DXF R12 (AC1009): later versions (AC1015+) make CLASSES/BLOCKS/
+// OBJECTS sections, the full table set, and per-entity handles mandatory, so
+// strict viewers (eDrawings, AutoCAD) reject a minimal file that claims them.
+// R12 has no such requirements and every CAD tool still reads it.
+// $MEASUREMENT = 1 marks the drawing as metric (millimetres).
 const buildHeader = () =>
-  ['0', 'SECTION', '2', 'HEADER', '9', '$ACADVER', '1', 'AC1015', '9', '$INSUNITS', '70', '4', '0', 'ENDSEC'].join(
+  ['0', 'SECTION', '2', 'HEADER', '9', '$ACADVER', '1', 'AC1009', '9', '$MEASUREMENT', '70', '1', '0', 'ENDSEC'].join(
     '\n',
   );
 
@@ -53,6 +56,29 @@ const buildLayerTable = () => {
     'SECTION',
     '2',
     'TABLES',
+    // Layers reference the CONTINUOUS linetype, so it must be defined first.
+    '0',
+    'TABLE',
+    '2',
+    'LTYPE',
+    '70',
+    '1',
+    '0',
+    'LTYPE',
+    '2',
+    'CONTINUOUS',
+    '70',
+    '0',
+    '3',
+    'Solid line',
+    '72',
+    '65',
+    '73',
+    '0',
+    '40',
+    '0.0',
+    '0',
+    'ENDTAB',
     '0',
     'TABLE',
     '2',
